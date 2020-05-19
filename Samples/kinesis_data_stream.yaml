@@ -1,0 +1,52 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  Add your description
+
+# Metadata:
+
+Parameters:
+  creator:
+    Description: 'Creator tag to be used in resources'
+    Type: String
+    Default: name
+  projectName:
+    Description: 'Project tag to be used in resources'
+    Type: String
+    Default: project-tag
+  environment:
+    Description: 'Environment'
+    Type: String
+    Default: Dev/Prod
+
+Resources:
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name:
+        !Sub "kinesis-stream-${environment}"
+      RetentionPeriodHours: 24
+      ShardCount: 1
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: "alias/aws/kinesis"
+      Tags:
+        -
+          Key: project
+          Value: !Sub "${projectName}"
+        -
+          Key: creator
+          Value: !Sub "${creator}"
+Outputs:
+  KinesisStreamOutput:
+    Description: Kinesis Data Stream created
+    Value: !Ref KinesisStream
+    Export:
+      Name: !Sub "${AWS::StackName}-stream"
+  KinesisStreamOutputArn:
+    Description: Kinesis Data Stream Resource Arn created
+    Value:
+      Fn::GetAtt: [ vcKinesisStream, Arn ]
+    Export:
+      Name: !Sub "${AWS::StackName}-stream-arn"
