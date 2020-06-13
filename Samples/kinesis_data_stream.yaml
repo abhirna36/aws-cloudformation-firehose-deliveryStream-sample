@@ -47,6 +47,6 @@ Outputs:
   KinesisStreamOutputArn:
     Description: Kinesis Data Stream Resource Arn created
     Value:
-      Fn::GetAtt: [ vcKinesisStream, Arn ]
+      Fn::GetAtt: [ kinesisStream, Arn ]
     Export:
       Name: !Sub "${AWS::StackName}-stream-arn"
