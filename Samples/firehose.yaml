@@ -1,0 +1,156 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  This is the Cloud formation template to configure kinesis firehose to stream data from kinesis stream and put in S3 bucket.
+
+#Metadata:
+
+Parameters:
+  creator:
+    Description: 'Creator tag to be used in resources'
+    Type: String
+    Default: CreatorName
+  projectName:
+    Description: 'Project tag to be used in resources'
+    Type: String
+    Default: ProjectTag
+  environment:
+    Description: Environment
+    Type: String
+    Default: Dev/Prod
+  glueDatabaseStackName:
+    Type: String
+    Default: glue-dev       # Stack name used to create Glue database
+  kinesisStackName:
+    Type: String
+    Default: kinesis-dev    # Stack name used to create Kinesis stream. Sample format for name :- ${project-kinesis-environment}
+  s3Stack:
+    Type: String
+    Default: s3-dev         # Stack name used to create s3 bucket. Sample format for name :- ${project-s3-environment}
+
+#Mappings:
+
+#Conditions:
+
+Resources:
+  firehoseDeliveryLogGrp:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesisfirehose/project-${environment}/firehose-delivery"  # Add you custom log group name
+      # RetentionInDays: Integer
+  # Creating Firehose Delivery IAM role_name:
+  firehoseDeliveryIAMRole:
+    DependsOn: firehoseDeliveryLogGrp
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          Effect: Allow
+          Principal:
+              Service: firehose.amazonaws.com
+          Action: sts:AssumeRole
+      Policies:                # optional, list of Policy
+        -
+          PolicyName: project-firehose-policy  #Add your Custom Policy Name
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:PutObject"
+                Resource:
+                  - Fn::ImportValue: !Sub ${s3Stack}-firehose-delivery-bucket     #Giving permission for a specific S3 bucket in which to put data
+                  -
+                    "Fn::Join":
+                    - ''
+                    - - !ImportValue
+                          "Fn::Sub": "${s3Stack}-firehose-delivery-bucket"
+                      - '/*'
+              -
+                Effect: "Allow"
+                Action:
+                  - "kinesis:DescribeStream"
+                  - "kinesis:GetShardIterator"
+                  - "kinesis:GetRecords"
+                Resource:
+                  - Fn::ImportValue: !Sub ${kinesisStackName}-stream-arn    # Fetch kinesis stream arn from another script which is used to create it
+              - Effect: Allow
+                Action: 'glue:GetTableVersions'
+                Resource: '*'
+              - Effect: "Allow"
+                Action:
+                  - "kms:GenerateDataKey"
+                  - "kms:Decrypt"
+                Resource:
+                  - !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/kinesis"
+              - Effect: Allow
+                Action: 'logs:PutLogEvents'
+                Resource:
+                  - Fn::GetAtt: [ firehoseDeliveryLogGrp, Arn ]
+      RoleName: !Sub "project-firehose-role-${environment}"   #Add your IAM Role Name
+
+    # Creating Kinesis Firehose stream
+  kinesisFirehoseDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName:
+        Fn::ImportValue: !Sub ${kinesisStackName}-stream    # Data Source
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN:
+          Fn::ImportValue: !Sub ${kinesisStackName}-stream-arn    # Data source Stream ARN
+        RoleARN:
+          Fn::GetAtt: [firehoseDeliveryIAMRole, Arn]
+      ExtendedS3DestinationConfiguration:
+        BucketARN:
+          Fn::ImportValue: !Sub ${s3Stack}-firehose-delivery-bucket
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 100
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref firehoseDeliveryLogGrp
+          LogStreamName: S3Delivery
+        CompressionFormat: UNCOMPRESSED
+        EncryptionConfiguration:
+          KMSEncryptionConfig:
+            AWSKMSKeyARN: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/kinesis"
+        # Prefix: cloudformation-test/kinesis-fh     # required
+        RoleARN:
+          Fn::GetAtt: [firehoseDeliveryIAMRole, Arn]
+    # For converting the data to Parquet format
+        DataFormatConversionConfiguration:
+          Enabled: true
+          InputFormatConfiguration:
+            Deserializer:
+              HiveJsonSerDe:
+                TimestampFormats:
+                  - millis
+          OutputFormatConfiguration:
+            Serializer:
+              ParquetSerDe:
+                Compression: UNCOMPRESSED       # GZIP for better Compression ratio and snappy for higher decompression speed.
+                EnableDictionaryCompression: No
+                MaxPaddingBytes: 0
+                WriterVersion: V1   # Default Value is V1
+          # Will update Db schema in the end
+          SchemaConfiguration:
+            CatalogId: !Ref AWS::AccountId
+            DatabaseName:
+              Fn::ImportValue: !Sub "${glueDatabaseStackName}-GlueDatabaseName"
+            Region: !Ref AWS::Region
+            RoleARN:
+              Fn::GetAtt: [firehoseDeliveryIAMRole, Arn]
+            TableName:
+              Fn::ImportValue: !Sub "${glueDatabaseStackName}-GlueDatabaseTableName"
+            VersionId: "LATEST"
+
+# Outputs:

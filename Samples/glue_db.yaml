@@ -1,0 +1,84 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  This is the Cloud formation template to configure glueDatabase which will be used to run query from athena.
+
+#Metadata:
+
+Parameters:
+  creator:
+    Description: 'Creator tag to be used in resources'
+    Type: String
+    Default: CreatorName
+  projectName:
+    Description: 'Project tag to be used in resources'
+    Type: String
+    Default: ProjectName  # Add your project name
+  environment:
+    Description: 'Environment'
+    Type: String
+    Default: Dev/Prod
+  databaseName:
+    Type: String
+    Default: projectName-Module-db-environment
+  tableName:
+    Type: String
+    Default: projectName-Module-environment
+
+#Mappings:
+
+#Conditions:
+
+Resources:
+  # Create an AWS Glue database
+  database:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref databaseName
+        Description: Database to hold tables for module data
+# Create an AWS Glue table
+  table:
+    # Creating the table waits for the database to be created
+    DependsOn: database
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref databaseName
+      TableInput:
+        Name: !Ref tableName
+        Description: Define the first few columns of the table
+        TableType: EXTERNAL_TABLE
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns:
+          - Name: id
+            Type: int
+          - Name: column2
+            Type: string
+          - Name: column3
+            Type: string
+          - Name: column4
+            Type: timestamp
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          SerdeInfo:
+            Parameters:
+              field.delim: ","
+            SerializationLibrary: org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
+
+#output
+Outputs:
+  glueDatabaseName:
+    Description: Glue Database Name
+    Value:
+      !Ref databaseName
+    Export:
+      Name: !Sub "${AWS::StackName}-GlueDatabaseName"
+  glueDatabaseTableName:
+    Description: Glue database table name
+    Value:
+      !Ref tableName
+    Export:
+      Name: !Sub "${AWS::StackName}-GlueDatabaseTableName"

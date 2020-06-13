@@ -1,0 +1,80 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  This is the Cloud formation template to create S3 Buckets.
+
+# Metadata:
+
+Parameters:
+  creator:
+    Description: 'Creator tag to be used in resources'
+    Type: String
+    Default: CreatorName
+  projectName:
+    Description: 'Project tag to be used in resources'
+    Type: String
+    Default: ProjectName  # Add your project name
+  environment:
+    Description: 'Environment'
+    Type: String
+    Default: Dev/Prod
+  firehoseDeliveryS3Bucket:
+    Description: 'S3 Buckets to store the firehose Delivery'
+    Type: String
+    Default: projectName-firehose-delivery-bucket-dev
+  firehoseElasticSearchBackupBucketName:
+    Description: 'S3 Buckets to store the backup data from firehose to elastic search'
+    Type: String
+    Default: projectName-firehose-elastic-search-backup
+# Mappings:
+
+# Conditions:
+
+Resources:
+  firehoseDeliveryBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref firehoseDeliveryS3Bucket
+      Tags:
+        -
+          Key: creator
+          Value: !Sub ${creator}
+        -
+          Key: project
+          Value: !Sub ${projectName}
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:                # required, list of Rule
+          -
+            ExpirationInDays: 30
+            Status: Enabled
+
+  firehoseBackupBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref firehoseElasticSearchBackupBucketName
+      Tags:
+        -
+          Key: creator
+          Value: !Sub ${creator}
+        -
+          Key: project
+          Value: !Sub ${projectName}
+      VersioningConfiguration:
+        Status: Enabled
+
+Outputs:
+  firehoseDelivery:
+    Description: S3 Bucket to store the delivery from firehose
+    Value:
+      Fn::GetAtt: [ firehoseDeliveryBucket, Arn ]
+    Export:
+      Name: !Sub "${AWS::StackName}-firehose-delivery-bucket"
+  firehoseBucketName:
+    Description: S3 Buckets to store the backup data from firehose to elastic search
+    Value:
+      Fn::GetAtt: [ firehoseBackupBucket, Arn ]
+    Export:
+      Name: !Sub "${AWS::StackName}-firehose-backup-bucket"
